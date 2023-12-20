@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"unsafe"
 
+	"github.com/rosedblabs/wal"
 	cache "github.com/xgzlucario/GigaCache"
 )
 
@@ -21,9 +22,7 @@ type Index struct {
 
 // Keydir
 type Keydir struct {
-	FileId uint32
-	Offset uint32
-	Size   uint32
+	*wal.ChunkPosition
 }
 
 // NewIndex
@@ -44,9 +43,7 @@ func (i *Index) Get(key string) (keydir Keydir, ok bool) {
 	}
 
 	keydir = Keydir{
-		FileId: order.Uint32(value[0:4]),
-		Offset: order.Uint32(value[4:8]),
-		Size:   order.Uint32(value[8:12]),
+		wal.DecodeChunkPosition(value),
 	}
 
 	return keydir, true
@@ -54,12 +51,7 @@ func (i *Index) Get(key string) (keydir Keydir, ok bool) {
 
 // Put
 func (i *Index) Put(key string, keydir Keydir) {
-	value := make([]byte, keydirSize)
-	order.PutUint32(value[0:4], keydir.FileId)
-	order.PutUint32(value[4:8], keydir.Offset)
-	order.PutUint32(value[8:12], keydir.Size)
-
-	i.m.Set(key, value)
+	i.m.Set(key, keydir.Encode())
 }
 
 // Scan
@@ -70,9 +62,9 @@ func (i *Index) Scan(f func(key []byte, keydir Keydir) bool) {
 		if len(value) != keydirSize {
 			panic(fmt.Errorf("bug: invalid value length: %d", len(value)))
 		}
-		keydir.FileId = order.Uint32(value[0:4])
-		keydir.Offset = order.Uint32(value[4:8])
-		keydir.Size = order.Uint32(value[8:12])
+		keydir = Keydir{
+			wal.DecodeChunkPosition(value),
+		}
 
 		return f(key, keydir)
 	})

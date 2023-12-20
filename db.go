@@ -1,15 +1,10 @@
 package mewdb
 
 import (
-	"hash/crc32"
 	"sync"
 
 	"github.com/rosedblabs/wal"
 	cache "github.com/xgzlucario/GigaCache"
-)
-
-var (
-	crctable = crc32.MakeTable(crc32.Castagnoli)
 )
 
 // DB
@@ -70,12 +65,7 @@ func (db *DB) Put(key string, value []byte) error {
 	}
 
 	// update keydir to index.
-	keydir := Keydir{
-		FileId: 0,
-		Offset: uint32(position.ChunkOffset),
-		Size:   uint32(position.ChunkSize),
-	}
-	db.index.Put(key, keydir)
+	db.index.Put(key, Keydir{position})
 
 	return nil
 }

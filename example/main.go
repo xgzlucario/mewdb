@@ -12,10 +12,11 @@ func main() {
 		panic(err)
 	}
 
-	for i := 0; i < 100000; i++ {
-		k := fmt.Sprintf("%08d", i)
-		if err := db.Put(k, []byte(k)); err != nil {
+	for i := 0; i < 6976; i++ {
+		k := []byte(fmt.Sprintf("%08d", i))
+		if err := db.Put(k, k); err != nil {
 			panic(err)
 		}
 	}
+	db.Close()
 }

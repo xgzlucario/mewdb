@@ -3,16 +3,21 @@ module github.com/xgzlucario/mewdb
 go 1.21
 
 require (
+	github.com/brianvoe/gofakeit/v6 v6.26.3
 	github.com/rosedblabs/wal v1.3.6
-	github.com/xgzlucario/GigaCache v0.0.0-20231219090211-5b64973f726a
+	github.com/stretchr/testify v1.8.4
+	github.com/xgzlucario/GigaCache v0.0.0-20231223110540-b56adb9e05a2
 )
 
 require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dolthub/maphash v0.1.0 // indirect
 	github.com/dolthub/swiss v0.2.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	golang.org/x/sys v0.15.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -1,36 +1,91 @@
 package mewdb
 
-// Record is the data format store in disk.
-type Record struct {
-	Timestamp   uint32
-	KeySize     uint32
-	ValueSize   uint32
-	InternalKey uint64
-	Key         []byte
-	Value       []byte
+import (
+	"encoding/binary"
+	"unsafe"
+
+	"github.com/rosedblabs/wal"
+)
+
+const (
+	maxVarLen32 = binary.MaxVarintLen32
+)
+
+var (
+	chunkPositionSize = int(unsafe.Sizeof(wal.ChunkPosition{}))
+)
+
+// LogRecord is the data format in disk.
+type LogRecord struct {
+	Timestamp uint32
+	KeySize   uint32
+	Key       []byte
+	Value     []byte
 }
 
-func (r *Record) encode() []byte {
-	buf := make([]byte, 16+8+len(r.Key)+len(r.Value))
+// encode
+func (r *LogRecord) encode() []byte {
+	buf := make([]byte, 0, maxVarLen32+maxVarLen32+len(r.Key)+len(r.Value))
 
-	// encode record.
-	order.PutUint32(buf[0:4], r.Timestamp)
-	order.PutUint32(buf[4:8], r.KeySize)
-	order.PutUint32(buf[8:12], r.ValueSize)
-	order.PutUint64(buf[16:24], r.InternalKey)
-	copy(buf[24:24+r.KeySize], r.Key)
-	copy(buf[24+r.KeySize:], r.Value)
+	buf = binary.AppendUvarint(buf, uint64(r.Timestamp))
+	buf = binary.AppendUvarint(buf, uint64(r.KeySize))
+	buf = append(buf, r.Key...)
+	buf = append(buf, r.Value...)
 
 	return buf
 }
 
-func (r *Record) decode(buf []byte) error {
-	r.Timestamp = order.Uint32(buf[0:4])
-	r.KeySize = order.Uint32(buf[4:8])
-	r.ValueSize = order.Uint32(buf[8:12])
-	r.InternalKey = order.Uint64(buf[16:24])
-	r.Key = buf[24 : 24+r.KeySize]
-	r.Value = buf[24+r.KeySize:]
+// decode
+func (r *LogRecord) decode(buf []byte) {
+	var index int
+	// timestamp
+	timestamp, n := binary.Uvarint(buf[index:])
+	r.Timestamp = uint32(timestamp)
+	index += n
+	// keySize
+	keySize, n := binary.Uvarint(buf[index:])
+	r.KeySize = uint32(keySize)
+	index += n
+	// key
+	r.Key = buf[index : index+int(keySize)]
+	index += int(keySize)
+	// value
+	r.Value = buf[index:]
+}
 
-	return nil
+// TTL
+func (r *LogRecord) TTL() int64 {
+	return int64(r.Timestamp) * timeCarry
+}
+
+// IndexRecord is the index data format in disk.
+type IndexRecord struct {
+	KeySize  uint32
+	Key      []byte
+	Position *wal.ChunkPosition
+}
+
+// encode
+func (r *IndexRecord) encode() []byte {
+	buf := make([]byte, 0, maxVarLen32+len(r.Key)+chunkPositionSize)
+
+	buf = binary.AppendUvarint(buf, uint64(r.KeySize))
+	buf = append(buf, r.Key...)
+	buf = append(buf, r.Position.Encode()...)
+
+	return buf
+}
+
+// decode
+func (r *IndexRecord) decode(buf []byte) {
+	var index int
+	// keySize
+	keySize, n := binary.Uvarint(buf[index:])
+	r.KeySize = uint32(keySize)
+	index += n
+	// key
+	r.Key = buf[index : index+int(keySize)]
+	index += int(keySize)
+	// position
+	r.Position = wal.DecodeChunkPosition(buf[index:])
 }

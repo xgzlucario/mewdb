@@ -1,7 +1,6 @@
 package mewdb
 
 import (
-	"encoding/binary"
 	"fmt"
 	"unsafe"
 
@@ -10,8 +9,6 @@ import (
 )
 
 var (
-	order = binary.LittleEndian
-
 	keydirSize = int(unsafe.Sizeof(Keydir{}))
 )
 
@@ -28,12 +25,12 @@ type Keydir struct {
 // NewIndex
 func NewIndex() *Index {
 	return &Index{
-		m: cache.New(),
+		m: cache.New(cache.DefaultOption),
 	}
 }
 
 // Get
-func (i *Index) Get(key string) (keydir Keydir, ok bool) {
+func (i *Index) Get(key []byte) (keydir Keydir, ok bool) {
 	value, _, ok := i.m.Get(key)
 	if !ok {
 		return
@@ -49,9 +46,14 @@ func (i *Index) Get(key string) (keydir Keydir, ok bool) {
 	return keydir, true
 }
 
-// Put
-func (i *Index) Put(key string, keydir Keydir) {
+// Set
+func (i *Index) Set(key []byte, keydir Keydir) {
 	i.m.Set(key, keydir.Encode())
+}
+
+// SetTx
+func (i *Index) SetTx(key []byte, keydir Keydir, ttl int64) {
+	i.m.SetTx(key, keydir.Encode(), ttl)
 }
 
 // Scan
@@ -68,4 +70,9 @@ func (i *Index) Scan(f func(key []byte, keydir Keydir) bool) {
 
 		return f(key, keydir)
 	})
+}
+
+// Len
+func (i *Index) Len() int {
+	return int(i.m.Stat().Len)
 }

@@ -12,11 +12,26 @@ func main() {
 		panic(err)
 	}
 
-	for i := 0; i < 6976; i++ {
-		k := []byte(fmt.Sprintf("%08d", i))
+	// put
+	for i := 0; i < 10000; i++ {
+		k := make([]byte, 1024*1024)
+		k[i] = 255
 		if err := db.Put(k, k); err != nil {
 			panic(err)
 		}
 	}
+
+	// get
+	for i := 0; i < 10000; i++ {
+		k := []byte(fmt.Sprintf("%08d", i))
+		v, err := db.Get(k)
+		if err != nil {
+			panic(err)
+		}
+		if string(v) != string(k) {
+			panic(fmt.Errorf("bug: invalid value: %s", v))
+		}
+	}
+
 	db.Close()
 }

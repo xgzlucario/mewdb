@@ -7,17 +7,21 @@ import (
 	"path"
 	"sync"
 
+	"github.com/gofrs/flock"
 	"github.com/rosedblabs/wal"
 )
 
 const (
 	noTTL     = 0
 	timeCarry = 1e9
+
+	fileLockName = "FLOCK"
 )
 
 // DB
 type DB struct {
 	sync.RWMutex
+	flock *flock.Flock
 
 	dataFiles *wal.WAL
 	hintFiles *wal.WAL
@@ -32,9 +36,23 @@ type DB struct {
 
 // Open
 func Open(opt *Option) (db *DB, err error) {
+	// TODO: checkOptions
+
+	// get file lock.
+	fileLock := flock.New(fileLockName)
+	hold, err := fileLock.TryLock()
+	if err != nil {
+		return nil, err
+	}
+	if !hold {
+		return nil, ErrDatabaseIsUsing
+	}
+
+	// create db instance.
 	db = &DB{
-		opt: opt,
-		log: slog.Default(),
+		flock: fileLock,
+		opt:   opt,
+		log:   slog.Default(),
 	}
 
 	// open data files.
@@ -129,6 +147,10 @@ func (db *DB) Close() error {
 		return err
 	}
 
+	if err := db.flock.Close(); err != nil {
+		return err
+	}
+
 	close(db.mergeC)
 
 	return nil
@@ -141,6 +163,7 @@ func (db *DB) loadIndexFromWAL() error {
 
 	for reader := db.dataFiles.NewReader(); ; reader.Next() {
 		position := reader.CurrentChunkPosition()
+		fmt.Println(*position)
 		keydir = Keydir{position}
 
 		// read data from disk.
@@ -149,7 +172,7 @@ func (db *DB) loadIndexFromWAL() error {
 			break
 
 		} else if err != nil {
-			panic(err)
+			return err
 		}
 		logRecord.decode(data)
 

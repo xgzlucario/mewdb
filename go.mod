@@ -4,9 +4,10 @@ go 1.21
 
 require (
 	github.com/brianvoe/gofakeit/v6 v6.26.3
+	github.com/gofrs/flock v0.8.1
 	github.com/rosedblabs/wal v1.3.6
 	github.com/stretchr/testify v1.8.4
-	github.com/xgzlucario/GigaCache v0.0.0-20231223110540-b56adb9e05a2
+	github.com/xgzlucario/GigaCache v0.0.0-20231226161408-655de575becb
 )
 
 require (

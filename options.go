@@ -15,6 +15,7 @@ type Options struct {
 	// Dir path if the db storage path.
 	DirPath string
 
+	// MErgeInterval
 	MergeInterval time.Duration
 }
 

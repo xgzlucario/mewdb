@@ -2,13 +2,18 @@ package mewdb
 
 import (
 	"encoding/binary"
+	"unsafe"
+
+	"github.com/rosedblabs/wal"
 )
 
 var (
 	order = binary.LittleEndian
+
+	keydirSize = int(unsafe.Sizeof(&wal.ChunkPosition{}))
 )
 
-// LogRecord is the db record format on disk.
+// LogRecord is the mewdb data record format on disk.
 type LogRecord struct {
 	Timestamp uint32
 	Key       []byte
@@ -24,9 +29,7 @@ func (r *LogRecord) encode() []byte {
 	buf = binary.AppendUvarint(buf, uint64(len(r.Key)))
 	buf = append(buf, r.Key...)
 	// value
-	buf = append(buf, r.Value...)
-
-	return buf
+	return append(buf, r.Value...)
 }
 
 // decode
@@ -35,7 +38,7 @@ func (r *LogRecord) decode(buf []byte) {
 	// timestamp
 	r.Timestamp = order.Uint32(buf)
 	index += 4
-	// key size
+	// keySize
 	keySize, n := binary.Uvarint(buf[index:])
 	index += n
 	// key
@@ -47,5 +50,45 @@ func (r *LogRecord) decode(buf []byte) {
 
 // TTL
 func (r *LogRecord) TTL() int64 {
+	return int64(r.Timestamp) * timeCarry
+}
+
+// HintRecord is the mewdb index record format on disk.
+type HintRecord struct {
+	Timestamp uint32
+	Key       []byte
+	Keydir    Keydir
+}
+
+// encode
+func (r *HintRecord) encode() []byte {
+	buf := make([]byte, 0, 4+5+len(r.Key)+keydirSize)
+	// timestamp
+	buf = order.AppendUint32(buf, r.Timestamp)
+	// key
+	buf = binary.AppendUvarint(buf, uint64(len(r.Key)))
+	buf = append(buf, r.Key...)
+	// keydir
+	return append(buf, r.Keydir.Encode()...)
+}
+
+// decode
+func (r *HintRecord) decode(buf []byte) {
+	var index int
+	// timestamp
+	r.Timestamp = order.Uint32(buf)
+	index += 4
+	// keySize
+	keySize, n := binary.Uvarint(buf[index:])
+	index += n
+	// key
+	r.Key = buf[index : index+int(keySize)]
+	index += int(keySize)
+	// keydir
+	r.Keydir = wal.DecodeChunkPosition(buf[index:])
+}
+
+// TTL
+func (r *HintRecord) TTL() int64 {
 	return int64(r.Timestamp) * timeCarry
 }

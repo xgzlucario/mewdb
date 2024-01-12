@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+var DefaultOptions = Options{
+	DirPath:       "data",
+	MergeInterval: 30 * time.Minute,
+}
+
+// Options represents the configuration for mewdb.
 type Options struct {
 	// Dir path if the db storage path.
 	DirPath string

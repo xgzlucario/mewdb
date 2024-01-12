@@ -86,7 +86,6 @@ func (db *DB) PutWithTTL(key, value []byte, nanosec int64) error {
 	// write WAL first.
 	keydir, err := db.dataFiles.Write(&LogRecord{
 		Timestamp: uint32(nanosec / timeCarry),
-		KeySize:   uint32(len(key)),
 		Key:       key,
 		Value:     value,
 	})

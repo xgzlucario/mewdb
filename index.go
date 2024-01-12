@@ -42,7 +42,7 @@ func (i *Index) SetTx(key []byte, keydir Keydir, ttl int64) {
 }
 
 // Scan
-func (i *Index) Scan(f func(key []byte, keydir Keydir) bool) {
+func (i *Index) Scan(f func(key []byte, keydir Keydir) (stop bool)) {
 	i.m.Scan(func(key, val []byte, ts int64) bool {
 		return f(key, wal.DecodeChunkPosition(val))
 	})

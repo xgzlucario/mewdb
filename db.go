@@ -1,21 +1,17 @@
 package mewdb
 
 import (
-	"fmt"
-	"io"
-	"log/slog"
 	"path"
 	"sync"
 
 	"github.com/gofrs/flock"
-	"github.com/rosedblabs/wal"
 )
 
 const (
 	noTTL     = 0
 	timeCarry = 1e9
 
-	fileLockName = "FLOCK"
+	fileLockName = "flock"
 )
 
 // DB
@@ -23,22 +19,22 @@ type DB struct {
 	sync.RWMutex
 	flock *flock.Flock
 
-	dataFiles *wal.WAL
-	hintFiles *wal.WAL
+	dataFiles *Wal
+	hintFiles *Wal
 
-	index *Index
-	opt   *Option
-
-	log *slog.Logger
+	index   *Index
+	options *Options
 
 	mergeC chan struct{}
 }
 
 // Open
-func Open(opt *Option) (db *DB, err error) {
-	// TODO: checkOptions
+func Open(options Options) (db *DB, err error) {
+	if err := checkOptions(options); err != nil {
+		return nil, err
+	}
 
-	// get file lock.
+	// create file lock, prevent multiple processes from using the same db directory.
 	fileLock := flock.New(fileLockName)
 	hold, err := fileLock.TryLock()
 	if err != nil {
@@ -48,40 +44,31 @@ func Open(opt *Option) (db *DB, err error) {
 		return nil, ErrDatabaseIsUsing
 	}
 
-	// create db instance.
+	// init db instance.
 	db = &DB{
-		flock: fileLock,
-		opt:   opt,
-		log:   slog.Default(),
+		index:   NewIndex(),
+		flock:   fileLock,
+		options: &options,
 	}
 
 	// open data files.
-	walOptions := wal.DefaultOptions
-	walOptions.DirPath = opt.DirPath
-
-	db.dataFiles, err = wal.Open(walOptions)
+	db.dataFiles, err = openWal(options.DirPath)
 	if err != nil {
 		return nil, err
 	}
 
 	// open hint files.
-	walOptions = wal.DefaultOptions
-	walOptions.DirPath = path.Join(opt.DirPath, "hint")
-
-	db.hintFiles, err = wal.Open(walOptions)
+	db.hintFiles, err = openWal(path.Join(options.DirPath, "hint"))
 	if err != nil {
 		return nil, err
 	}
 
 	// load index from WAL.
-	db.index = NewIndex()
 	if err := db.loadIndexFromWAL(); err != nil {
 		return nil, err
 	}
 
 	db.mergeC = make(chan struct{}, 1)
-
-	db.log.Info("mewdb is ready to go.")
 
 	return db, nil
 }
@@ -93,36 +80,38 @@ func (db *DB) Put(key, value []byte) error {
 
 // PutWithTTL
 func (db *DB) PutWithTTL(key, value []byte, nanosec int64) error {
-	// encode log record.
-	logRecord := LogRecord{
+	if len(key) == 0 {
+		return ErrKeyIsEmpty
+	}
+	// write WAL first.
+	keydir, err := db.dataFiles.Write(&LogRecord{
 		Timestamp: uint32(nanosec / timeCarry),
 		KeySize:   uint32(len(key)),
 		Key:       key,
 		Value:     value,
-	}
-	value = logRecord.encode()
-
-	// write WAL.
-	position, err := db.dataFiles.Write(value)
+	})
 	if err != nil {
 		return err
 	}
-
 	// update index.
-	db.index.Set(key, Keydir{position})
+	db.index.Set(key, keydir)
 
 	return nil
 }
 
 // Get
 func (db *DB) Get(key []byte) ([]byte, error) {
+	if len(key) == 0 {
+		return nil, ErrKeyIsEmpty
+	}
+
 	keydir, ok := db.index.Get(key)
 	if !ok {
 		return nil, ErrKeyNotFound
 	}
 
 	// read data from disk.
-	data, err := db.dataFiles.Read(keydir.ChunkPosition)
+	data, err := db.dataFiles.Read(keydir)
 	if err != nil {
 		return nil, err
 	}
@@ -139,18 +128,17 @@ func (db *DB) Close() error {
 	db.Lock()
 	defer db.Unlock()
 
+	// close data files.
 	if err := db.dataFiles.Close(); err != nil {
 		return err
 	}
-
 	if err := db.hintFiles.Close(); err != nil {
 		return err
 	}
-
+	// close file lock.
 	if err := db.flock.Close(); err != nil {
 		return err
 	}
-
 	close(db.mergeC)
 
 	return nil
@@ -158,33 +146,10 @@ func (db *DB) Close() error {
 
 // loadIndexFromWAL
 func (db *DB) loadIndexFromWAL() error {
-	var keydir Keydir
-	var logRecord = new(LogRecord)
+	var record = new(LogRecord)
 
-	for reader := db.dataFiles.NewReader(); ; reader.Next() {
-		position := reader.CurrentChunkPosition()
-		fmt.Println(*position)
-		keydir = Keydir{position}
-
-		// read data from disk.
-		data, err := db.dataFiles.Read(position)
-		if err == io.EOF {
-			break
-
-		} else if err != nil {
-			return err
-		}
-		logRecord.decode(data)
-
-		db.index.SetTx(logRecord.Key, keydir, logRecord.TTL())
-	}
-
-	db.log.Info(fmt.Sprintf("load index from WAL: %d", db.index.Len()))
-
-	return nil
-}
-
-// loadIndexFromHint
-func (db *DB) loadIndexFromHint() error {
-	return nil
+	return db.dataFiles.Iter(func(keydir Keydir, val []byte) {
+		record.decode(val)
+		db.index.SetTx(record.Key, keydir, record.TTL())
+	})
 }

@@ -1,34 +1,35 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/xgzlucario/mewdb"
 )
 
 func main() {
-	db, err := mewdb.Open(&mewdb.Option{DirPath: "./data"})
+	db, err := mewdb.Open(mewdb.Options{DirPath: "data"})
 	if err != nil {
 		panic(err)
 	}
+	const N = 100 * 10000
 
 	// put
-	for i := 0; i < 10000; i++ {
-		k := make([]byte, 1024*1024)
-		k[i] = 255
+	for i := 0; i < N; i++ {
+		k := []byte(fmt.Sprintf("%08d", i))
 		if err := db.Put(k, k); err != nil {
 			panic(err)
 		}
 	}
 
 	// get
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < N; i++ {
 		k := []byte(fmt.Sprintf("%08d", i))
 		v, err := db.Get(k)
 		if err != nil {
 			panic(err)
 		}
-		if string(v) != string(k) {
+		if !bytes.Equal(k, v) {
 			panic(fmt.Errorf("bug: invalid value: %s", v))
 		}
 	}

@@ -12,11 +12,6 @@ type Index struct {
 	m *cache.GigaCache
 }
 
-// Keydir
-type Keydir struct {
-	*wal.ChunkPosition
-}
-
 // NewIndex
 func NewIndex() *Index {
 	return &Index{
@@ -24,15 +19,15 @@ func NewIndex() *Index {
 	}
 }
 
+type Keydir = *wal.ChunkPosition
+
 // Get
 func (i *Index) Get(key []byte) (keydir Keydir, ok bool) {
-	value, _, ok := i.m.Get(b2s(key))
+	val, _, ok := i.m.Get(b2s(key))
 	if !ok {
 		return
 	}
-	keydir = Keydir{
-		wal.DecodeChunkPosition(value),
-	}
+	keydir = wal.DecodeChunkPosition(val)
 	return keydir, true
 }
 
@@ -48,19 +43,19 @@ func (i *Index) SetTx(key []byte, keydir Keydir, ttl int64) {
 
 // Scan
 func (i *Index) Scan(f func(key []byte, keydir Keydir) bool) {
-	var keydir Keydir
-
-	i.m.Scan(func(key, value []byte, ts int64) bool {
-		keydir = Keydir{
-			wal.DecodeChunkPosition(value),
-		}
-		return f(key, keydir)
+	i.m.Scan(func(key, val []byte, ts int64) bool {
+		return f(key, wal.DecodeChunkPosition(val))
 	})
 }
 
 // Len
 func (i *Index) Len() int {
 	return int(i.m.Stat().Len)
+}
+
+// GC
+func (i *Index) GC() {
+	i.m.Migrate()
 }
 
 // b2s converts byte slice to string unsafe.

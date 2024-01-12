@@ -1,4 +1,5 @@
 data/
 coverage.*
-flock
 tmp-*
+
+FLOCK

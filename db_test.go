@@ -61,7 +61,7 @@ func TestIndex(t *testing.T) {
 
 		// scan
 		count := 0
-		index.Scan(func(key []byte, keydir Keydir) bool {
+		index.Scan(func(key []byte, _ int64, keydir Keydir) bool {
 			count++
 			v, ok := validMap[string(key)]
 			assert.True(ok)

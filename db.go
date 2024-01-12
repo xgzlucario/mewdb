@@ -11,7 +11,8 @@ const (
 	noTTL     = 0
 	timeCarry = 1e9
 
-	fileLockName = "flock"
+	fileLockName = "FLOCK"
+	hintFileName = "HINT"
 )
 
 // DB
@@ -63,6 +64,11 @@ func Open(options Options) (db *DB, err error) {
 		return nil, err
 	}
 
+	// load index from hintfiles.
+	if err := db.loadIndexFromHint(); err != nil {
+		return nil, err
+	}
+
 	// load index from WAL.
 	if err := db.loadIndexFromWAL(); err != nil {
 		return nil, err
@@ -83,12 +89,14 @@ func (db *DB) PutWithTTL(key, value []byte, nanosec int64) error {
 	if len(key) == 0 {
 		return ErrKeyIsEmpty
 	}
+
 	// write WAL first.
-	keydir, err := db.dataFiles.Write(&LogRecord{
+	record := &LogRecord{
 		Timestamp: uint32(nanosec / timeCarry),
 		Key:       key,
 		Value:     value,
-	})
+	}
+	keydir, err := db.dataFiles.Write(record.encode())
 	if err != nil {
 		return err
 	}
@@ -131,10 +139,13 @@ func (db *DB) Close() error {
 	if err := db.dataFiles.Close(); err != nil {
 		return err
 	}
+
+	// close hint files.
 	if err := db.hintFiles.Close(); err != nil {
 		return err
 	}
-	// close file lock.
+
+	// release file lock.
 	if err := db.flock.Close(); err != nil {
 		return err
 	}
@@ -145,10 +156,28 @@ func (db *DB) Close() error {
 
 // loadIndexFromWAL
 func (db *DB) loadIndexFromWAL() error {
-	var record = new(LogRecord)
+	record := new(LogRecord)
 
 	return db.dataFiles.Iter(func(keydir Keydir, val []byte) {
 		record.decode(val)
 		db.index.SetTx(record.Key, keydir, record.TTL())
 	})
 }
+
+// loadIndexFromHint
+func (db *DB) loadIndexFromHint() error {
+	record := new(HintRecord)
+
+	return db.hintFiles.Iter(func(_ Keydir, bytes []byte) {
+		record.decode(bytes)
+		db.index.Set(record.Key, record.Keydir)
+	})
+}
+
+// db
+// start: 1.read hint? 2.read wal
+// merge:
+// 1. range wal
+// 2. exist index? save : skip
+// 3. write hint wal
+// 4. end

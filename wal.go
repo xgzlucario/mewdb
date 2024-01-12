@@ -1,14 +1,18 @@
 package mewdb
 
 import (
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/rosedblabs/wal"
 )
 
 // Wal is write ahead log for mewdb.
 type Wal struct {
-	log *wal.WAL
+	dirPath string
+	log     *wal.WAL
 }
 
 // openWal create WAL files by dirPath.
@@ -20,12 +24,12 @@ func openWal(dirPath string) (*Wal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Wal{log: log}, err
+	return &Wal{dirPath: dirPath, log: log}, err
 }
 
 // Write
-func (l *Wal) Write(record *LogRecord) (Keydir, error) {
-	return l.log.Write(record.encode())
+func (l *Wal) Write(data []byte) (Keydir, error) {
+	return l.log.Write(data)
 }
 
 // Read
@@ -58,4 +62,30 @@ func (l *Wal) Sync() error {
 // Close
 func (l *Wal) Close() error {
 	return l.log.Close()
+}
+
+// ActiveSegmentID
+func (l *Wal) ActiveSegmentID() uint32 {
+	return l.log.ActiveSegmentID()
+}
+
+// OpenNewActiveSegment
+func (l *Wal) OpenNewActiveSegment() error {
+	return l.log.OpenNewActiveSegment()
+}
+
+// RemoveOldSegments remove all segments which is less than maxSegmentID.
+func (l *Wal) RemoveOldSegments(maxSegmentID uint32) error {
+	maxSegmentName := fmt.Sprintf("%09d", maxSegmentID)
+
+	filepath.WalkDir(l.dirPath, func(path string, file os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if file.Name() < maxSegmentName {
+			os.Remove(path)
+		}
+		return nil
+	})
+	return nil
 }

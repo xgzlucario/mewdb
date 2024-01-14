@@ -2,7 +2,6 @@ package mewdb
 
 import (
 	"path"
-	"sync"
 
 	"github.com/gofrs/flock"
 )
@@ -15,28 +14,32 @@ const (
 	hintFileName = "HINT"
 )
 
-// DB
+// DB represents a MEWDB database instance built on BITCASK model.
+// See https://en.wikipedia.org/wiki/Bitcask for more details.
 type DB struct {
-	sync.RWMutex
-	flock *flock.Flock
-
-	dataFiles *Wal
-	hintFiles *Wal
-
-	index   *Index
-	options *Options
-
-	mergeC chan struct{}
+	flock     *flock.Flock
+	dataFiles *Wal     // data files save key-value by log-structured storage.
+	hintFiles *Wal     // hint files store the key and keydir for fast startup.
+	index     *Index   // index keeps all the keys in memory.
+	options   *Options // database options.
+	mergeC    chan struct{}
 }
 
-// Open
+// Open a database with the specified options.
+// If the database directory does not exist, it will be created automatically.
 func Open(options Options) (db *DB, err error) {
 	if err := checkOptions(options); err != nil {
 		return nil, err
 	}
 
+	// open data files.
+	dataFiles, err := openWal(options.DirPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// create file lock, prevent multiple processes from using the same db directory.
-	fileLock := flock.New(fileLockName)
+	fileLock := flock.New(path.Join(options.DirPath, fileLockName))
 	hold, err := fileLock.TryLock()
 	if err != nil {
 		return nil, err
@@ -47,15 +50,10 @@ func Open(options Options) (db *DB, err error) {
 
 	// init db instance.
 	db = &DB{
-		index:   NewIndex(),
-		flock:   fileLock,
-		options: &options,
-	}
-
-	// open data files.
-	db.dataFiles, err = openWal(options.DirPath)
-	if err != nil {
-		return nil, err
+		index:     NewIndex(),
+		flock:     fileLock,
+		options:   &options,
+		dataFiles: dataFiles,
 	}
 
 	// open hint files.
@@ -112,6 +110,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 		return nil, ErrKeyIsEmpty
 	}
 
+	// find index on memory.
 	keydir, ok := db.index.Get(key)
 	if !ok {
 		return nil, ErrKeyNotFound
@@ -124,17 +123,14 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	}
 
 	// decode record.
-	logRecord := new(LogRecord)
-	logRecord.decode(data)
+	record := new(LogRecord)
+	record.decode(data)
 
-	return logRecord.Value, nil
+	return record.Value, nil
 }
 
 // Close
 func (db *DB) Close() error {
-	db.Lock()
-	defer db.Unlock()
-
 	// close data files.
 	if err := db.dataFiles.Close(); err != nil {
 		return err
@@ -174,10 +170,12 @@ func (db *DB) loadIndexFromHint() error {
 	})
 }
 
-// db
-// start: 1.read hint? 2.read wal
-// merge:
-// 1. range wal
-// 2. exist index? save : skip
-// 3. write hint wal
-// 4. end
+// Merge
+func (db *DB) Merge() error {
+	select {
+	case db.mergeC <- struct{}{}:
+		return db.doMerge()
+	default:
+		return ErrMergeIsRunning
+	}
+}

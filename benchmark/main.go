@@ -7,9 +7,6 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
-	"github.com/rosedblabs/rosedb/v2"
-	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/xgzlucario/mewdb"
 )
 
@@ -29,54 +26,12 @@ func genKV(id int) ([]byte, []byte) {
 	return k, k
 }
 
-/*
-mewdb
-entries: 20000000
-alloc: 1180 mb
-gcsys: 39 mb
-heap inuse: 1180 mb
-heap object: 4852 k
-gc: 22
-pause: 1.201491ms
-cost: 59.878826592s
-
-rosedb
-entries: 20000000
-alloc: 2297 mb
-gcsys: 81 mb
-heap inuse: 2423 mb
-heap object: 70306 k
-gc: 18
-pause: 1.399241ms
-cost: 1m14.041677021s
-
-leveldb
-entries: 20000000
-alloc: 27 mb
-gcsys: 5 mb
-heap inuse: 27 mb
-heap object: 175 k
-gc: 83
-pause: 4.261ms
-cost: 1m7.401450028s
-
-badger
-entries: 20000000
-alloc: 127 mb
-gcsys: 6 mb
-heap inuse: 128 mb
-heap object: 599 k
-gc: 59
-pause: 9.784388ms
-cost: 8.912119175s
-*/
-
 func main() {
 	var c string
 	var entries int
 
 	flag.StringVar(&c, "db", "mewdb", "db to bench.")
-	flag.IntVar(&entries, "entries", 2000*10000, "number of entries to test.")
+	flag.IntVar(&entries, "entries", 1000*10000, "number of entries to test.")
 	flag.Parse()
 
 	fmt.Println("==========")
@@ -95,35 +50,33 @@ func main() {
 			db.Put(k, v)
 		}
 
-	case "rosedb":
-		options := rosedb.DefaultOptions
-		options.DirPath = "tmp-rosedb"
-		db, _ := rosedb.Open(options)
-		defer db.Close()
-		for i := 0; i < entries; i++ {
-			k, v := genKV(i)
-			db.Put(k, v)
-		}
+		// case "rosedb":
+		// 	options := rosedb.DefaultOptions
+		// 	options.DirPath = "tmp-rosedb"
+		// 	db, _ := rosedb.Open(options)
+		// 	defer db.Close()
+		// 	for i := 0; i < entries; i++ {
+		// 		k, v := genKV(i)
+		// 		db.Put(k, v)
+		// 	}
 
-	case "leveldb":
-		db, _ := leveldb.OpenFile("tmp-leveldb", nil)
-		defer db.Close()
-		for i := 0; i < entries; i++ {
-			k, v := genKV(i)
-			db.Put(k, v, nil)
-		}
+		// case "leveldb":
+		// 	db, _ := leveldb.OpenFile("tmp-leveldb", nil)
+		// 	defer db.Close()
+		// 	for i := 0; i < entries; i++ {
+		// 		k, v := genKV(i)
+		// 		db.Put(k, v, nil)
+		// 	}
 
-	case "badger":
-		options := badger.DefaultOptions("tmp-badger")
-		options.Logger = nil
-		db, _ := badger.Open(options)
-		defer db.Close()
-		for i := 0; i < entries; i++ {
-			k, v := genKV(i)
-			db.View(func(txn *badger.Txn) error {
-				return txn.Set(k, v)
-			})
-		}
+		// case "flydb":
+		// 	options := config.DefaultOptions
+		// 	options.DirPath = "tmp-flydb"
+		// 	db, _ := flydb.NewFlyDB(options)
+		// 	defer db.Close()
+		// 	for i := 0; i < entries; i++ {
+		// 		k, v := genKV(i)
+		// 		db.Put(k, v)
+		// 	}
 	}
 	cost := time.Since(start)
 

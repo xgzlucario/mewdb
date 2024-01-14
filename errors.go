@@ -7,5 +7,7 @@ var (
 
 	ErrKeyIsEmpty = errors.New("mewdb: key is empty")
 
-	ErrDatabaseIsUsing = errors.New("mewdb: database is using")
+	ErrDatabaseIsUsing = errors.New("mewdb: create flock file error, database is using")
+
+	ErrMergeIsRunning = errors.New("mewdb: merge is running")
 )

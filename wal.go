@@ -11,20 +11,26 @@ import (
 
 // Wal is write ahead log for mewdb.
 type Wal struct {
-	dirPath string
-	log     *wal.WAL
+	dirPath    string
+	segmentExt string
+	log        *wal.WAL
 }
 
 // openWal create WAL files by dirPath.
 func openWal(dirPath string) (*Wal, error) {
 	options := wal.DefaultOptions
 	options.DirPath = dirPath
+	options.SegmentFileExt = ".SEG"
 	// open from wal.
 	log, err := wal.Open(options)
 	if err != nil {
 		return nil, err
 	}
-	return &Wal{dirPath: dirPath, log: log}, err
+	return &Wal{
+		segmentExt: options.SegmentFileExt,
+		dirPath:    dirPath,
+		log:        log,
+	}, err
 }
 
 // Write
@@ -39,18 +45,21 @@ func (l *Wal) Read(keydir Keydir) ([]byte, error) {
 
 // Iter iterate all data in wal.
 func (l *Wal) Iter(f func(Keydir, []byte)) error {
-	reader := l.log.NewReader()
-	record := new(LogRecord)
+	return l.IterWithMax(l.log.ActiveSegmentID(), f)
+}
 
+// Iter iterate all data in wal with max segment id.
+func (l *Wal) IterWithMax(segId uint32, f func(Keydir, []byte)) error {
+	reader := l.log.NewReaderWithMax(segId)
 	for {
 		val, position, err := reader.Next()
 		if err == io.EOF {
 			break
+		} else if err != nil {
+			return err
 		}
-		record.decode(val)
 		f(position, val)
 	}
-
 	return nil
 }
 
@@ -76,13 +85,13 @@ func (l *Wal) OpenNewActiveSegment() error {
 
 // RemoveOldSegments remove all segments which is less than maxSegmentID.
 func (l *Wal) RemoveOldSegments(maxSegmentID uint32) error {
-	maxSegmentName := fmt.Sprintf("%09d", maxSegmentID)
+	maxSegmentName := fmt.Sprintf("%09d%s", maxSegmentID, l.segmentExt)
 
 	filepath.WalkDir(l.dirPath, func(path string, file os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if file.Name() < maxSegmentName {
+		if file.Name() <= maxSegmentName {
 			os.Remove(path)
 		}
 		return nil

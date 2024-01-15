@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/xgzlucario/mewdb"
 )
@@ -10,21 +11,17 @@ import (
 func main() {
 	os.RemoveAll("data")
 
-	db, err := mewdb.Open(mewdb.Options{DirPath: "data"})
+	db, err := mewdb.Open(mewdb.Options{DirPath: "data", MergeInterval: time.Second * 5})
 	if err != nil {
 		panic(err)
 	}
-	const N = 30
+	const N = 10000
 
 	// put
-	for i := 0; i < 100*10000; i++ {
-		k := []byte(fmt.Sprintf("%08d", i%N))
+	for i := 0; ; i++ {
+		k := []byte(fmt.Sprintf("%08x", i%N))
 		if err := db.Put(k, k); err != nil {
 			panic(err)
 		}
 	}
-
-	db.Merge()
-
-	db.Close()
 }

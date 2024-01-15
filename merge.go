@@ -2,31 +2,23 @@ package mewdb
 
 // doMerge
 func (db *DB) doMerge() (err error) {
-	if err = db.dataFiles.Sync(); err != nil {
-		return err
-	}
-
-	prevSegmentID := db.dataFiles.ActiveSegmentID()
-	// create new segment file.
-	if err = db.dataFiles.OpenNewActiveSegment(); err != nil {
+	// get current active segmentId.
+	segmentId, err := db.dataFiles.ActiveSegmentID(), db.dataFiles.OpenNewActiveSegment()
+	if err != nil {
 		return
 	}
-
 	record := new(LogRecord)
 	var newKeydir Keydir
 
-	err = db.dataFiles.IterWithMax(prevSegmentID, func(keydir Keydir, data []byte) {
+	err = db.dataFiles.IterWithMax(segmentId, func(keydir Keydir, data []byte) {
 		record.decode(data)
-
-		// if key exist in index.
+		// if key is the latest version in index, write to new segment file.
 		indexKeydir, ok := db.index.Get(record.Key)
 		if ok && keydirEqual(indexKeydir, keydir) {
-			// write to new segment file.
 			newKeydir, err = db.dataFiles.Write(data)
 			if err != nil {
 				return
 			}
-			// update index.
 			db.index.Set(record.Key, newKeydir)
 		}
 	})
@@ -34,16 +26,11 @@ func (db *DB) doMerge() (err error) {
 		return
 	}
 
-	// sync data files.
-	if err = db.dataFiles.Sync(); err != nil {
-		return
-	}
-
 	// release lock.
 	<-db.mergeC
 
 	// remove old segments.
-	return db.dataFiles.RemoveOldSegments(prevSegmentID)
+	return db.dataFiles.RemoveOldSegments(segmentId)
 }
 
 // keydirEqual

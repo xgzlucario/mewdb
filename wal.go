@@ -44,21 +44,21 @@ func (l *Wal) Read(keydir Keydir) ([]byte, error) {
 }
 
 // Iter iterate all data in wal.
-func (l *Wal) Iter(f func(Keydir, []byte)) error {
+func (l *Wal) Iter(f func(keydir Keydir, data []byte)) error {
 	return l.IterWithMax(l.log.ActiveSegmentID(), f)
 }
 
 // Iter iterate all data in wal with max segment id.
-func (l *Wal) IterWithMax(segId uint32, f func(Keydir, []byte)) error {
+func (l *Wal) IterWithMax(segId uint32, f func(keydir Keydir, data []byte)) error {
 	reader := l.log.NewReaderWithMax(segId)
 	for {
-		val, position, err := reader.Next()
+		data, keydir, err := reader.Next()
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return err
 		}
-		f(position, val)
+		f(keydir, data)
 	}
 	return nil
 }
@@ -87,7 +87,7 @@ func (l *Wal) OpenNewActiveSegment() error {
 func (l *Wal) RemoveOldSegments(maxSegmentID uint32) error {
 	maxSegmentName := fmt.Sprintf("%09d%s", maxSegmentID, l.segmentExt)
 
-	filepath.WalkDir(l.dirPath, func(path string, file os.DirEntry, err error) error {
+	return filepath.WalkDir(l.dirPath, func(path string, file os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -96,5 +96,4 @@ func (l *Wal) RemoveOldSegments(maxSegmentID uint32) error {
 		}
 		return nil
 	})
-	return nil
 }

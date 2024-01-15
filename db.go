@@ -1,7 +1,9 @@
 package mewdb
 
 import (
+	"context"
 	"path"
+	"time"
 
 	"github.com/gofrs/flock"
 )
@@ -17,12 +19,15 @@ const (
 // DB represents a MEWDB database instance built on BITCASK model.
 // See https://en.wikipedia.org/wiki/Bitcask for more details.
 type DB struct {
-	flock     *flock.Flock
-	dataFiles *Wal     // data files save key-value by log-structured storage.
-	hintFiles *Wal     // hint files store the key and keydir for fast startup.
-	index     *Index   // index keeps all the keys in memory.
-	options   *Options // database options.
-	mergeC    chan struct{}
+	flock       *flock.Flock
+	dataFiles   *Wal // data files save key-value by log-structured storage.
+	hintFiles   *Wal // hint files store the key and keydir for fast startup.
+	index       *Index
+	options     *Options
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mergeC      chan struct{}
+	mergeTicker *time.Ticker // mergeTicker for auto merge task.
 }
 
 // Open a database with the specified options.
@@ -72,7 +77,20 @@ func Open(options Options) (db *DB, err error) {
 		return nil, err
 	}
 
+	// init auto merge task.
 	db.mergeC = make(chan struct{}, 1)
+	db.ctx, db.cancel = context.WithCancel(context.Background())
+	db.mergeTicker = time.NewTicker(options.MergeInterval)
+	go func() {
+		for {
+			select {
+			case <-db.ctx.Done():
+				return
+			case <-db.mergeTicker.C:
+				db.Merge()
+			}
+		}
+	}()
 
 	return db, nil
 }
@@ -146,6 +164,7 @@ func (db *DB) Close() error {
 		return err
 	}
 	close(db.mergeC)
+	db.cancel()
 
 	return nil
 }
@@ -154,8 +173,8 @@ func (db *DB) Close() error {
 func (db *DB) loadIndexFromWAL() error {
 	record := new(LogRecord)
 
-	return db.dataFiles.Iter(func(keydir Keydir, val []byte) {
-		record.decode(val)
+	return db.dataFiles.Iter(func(keydir Keydir, data []byte) {
+		record.decode(data)
 		db.index.SetTx(record.Key, keydir, record.TTL())
 	})
 }
@@ -164,8 +183,8 @@ func (db *DB) loadIndexFromWAL() error {
 func (db *DB) loadIndexFromHint() error {
 	record := new(HintRecord)
 
-	return db.hintFiles.Iter(func(_ Keydir, bytes []byte) {
-		record.decode(bytes)
+	return db.hintFiles.Iter(func(_ Keydir, data []byte) {
+		record.decode(data)
 		db.index.Set(record.Key, record.Keydir)
 	})
 }
@@ -173,6 +192,8 @@ func (db *DB) loadIndexFromHint() error {
 // Merge
 func (db *DB) Merge() error {
 	select {
+	case <-db.ctx.Done():
+		return ErrDatabaseIsClosed
 	case db.mergeC <- struct{}{}:
 		return db.doMerge()
 	default:

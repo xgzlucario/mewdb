@@ -5,31 +5,33 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/rosedblabs/wal"
 )
 
 // Wal is write ahead log for mewdb.
 type Wal struct {
-	dirPath    string
-	segmentExt string
-	log        *wal.WAL
+	dirPath        string
+	segmentFileExt string
+	log            *wal.WAL
 }
 
 // openWal create WAL files by dirPath.
-func openWal(dirPath string) (*Wal, error) {
+func openWal(dirPath, segmentFileExt string) (*Wal, error) {
 	options := wal.DefaultOptions
 	options.DirPath = dirPath
-	options.SegmentFileExt = ".SEG"
+	options.SegmentFileExt = segmentFileExt
+
 	// open from wal.
 	log, err := wal.Open(options)
 	if err != nil {
 		return nil, err
 	}
 	return &Wal{
-		segmentExt: options.SegmentFileExt,
-		dirPath:    dirPath,
-		log:        log,
+		segmentFileExt: options.SegmentFileExt,
+		dirPath:        dirPath,
+		log:            log,
 	}, err
 }
 
@@ -43,14 +45,18 @@ func (l *Wal) Read(keydir Keydir) ([]byte, error) {
 	return l.log.Read(keydir)
 }
 
-// Iter iterate all data in wal.
-func (l *Wal) Iter(f func(keydir Keydir, data []byte)) error {
-	return l.IterWithMax(l.log.ActiveSegmentID(), f)
-}
+// walker is the callback function for Iter.
+type walker func(keydir Keydir, data []byte)
 
-// Iter iterate all data in wal with max segment id.
-func (l *Wal) IterWithMax(segId uint32, f func(keydir Keydir, data []byte)) error {
-	reader := l.log.NewReaderWithMax(segId)
+// iterInternal iterate datas between segmentStart and segmentEnd, this is a internal function.
+func (l *Wal) iterInternal(segmentStart, segmentEnd uint32, f walker) error {
+	if segmentEnd < segmentStart {
+		panic("bug: segmentEnd is less than segmentStart")
+	}
+	reader := l.log.NewReaderWithMax(segmentEnd)
+	for reader.CurrentSegmentId() < segmentStart {
+		reader.SkipCurrentSegment()
+	}
 	for {
 		data, keydir, err := reader.Next()
 		if err == io.EOF {
@@ -61,6 +67,21 @@ func (l *Wal) IterWithMax(segId uint32, f func(keydir Keydir, data []byte)) erro
 		f(keydir, data)
 	}
 	return nil
+}
+
+// Iter iterate all data.
+func (l *Wal) Iter(f walker) error {
+	return l.iterInternal(0, l.log.ActiveSegmentID(), f)
+}
+
+// IterWithMax iterate all data with max segment id.
+func (l *Wal) IterWithMax(segId uint32, f walker) error {
+	return l.iterInternal(0, segId, f)
+}
+
+// IterWithSegment iterate all data with segment id.
+func (l *Wal) IterWithSegment(segId uint32, f walker) error {
+	return l.iterInternal(segId, segId, f)
 }
 
 // Sync
@@ -83,15 +104,22 @@ func (l *Wal) OpenNewActiveSegment() error {
 	return l.log.OpenNewActiveSegment()
 }
 
+// SegmentFileName
+func (l *Wal) SegmentFileName(segId uint32) string {
+	return fmt.Sprintf("%09d%s", segId, l.segmentFileExt)
+}
+
 // RemoveOldSegments remove all segments which is less than maxSegmentID.
 func (l *Wal) RemoveOldSegments(maxSegmentID uint32) error {
-	maxSegmentName := fmt.Sprintf("%09d%s", maxSegmentID, l.segmentExt)
+	maxSegmentName := l.SegmentFileName(maxSegmentID)
 
 	return filepath.WalkDir(l.dirPath, func(path string, file os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if file.Name() <= maxSegmentName {
+		name := file.Name()
+
+		if strings.HasSuffix(name, l.segmentFileExt) && name <= maxSegmentName {
 			os.Remove(path)
 		}
 		return nil

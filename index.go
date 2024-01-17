@@ -41,6 +41,11 @@ func (i *Index) SetTx(key []byte, keydir Keydir, ttl int64) {
 	i.m.SetTx(b2s(key), keydir.Encode(), ttl)
 }
 
+// Delete
+func (i *Index) Delete(key []byte) bool {
+	return i.m.Delete(b2s(key))
+}
+
 // Scan
 func (i *Index) Scan(f func(key []byte, ts int64, keydir Keydir) (stop bool)) {
 	i.m.Scan(func(key, val []byte, ts int64) bool {

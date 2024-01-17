@@ -12,7 +12,7 @@ var DefaultOptions = Options{
 
 // Options represents the configuration for mewdb.
 type Options struct {
-	// Dir path if the db storage path.
+	// DirPath is the database storage path.
 	DirPath string
 
 	// MergeInterval
@@ -23,6 +23,9 @@ type Options struct {
 func checkOptions(option Options) error {
 	if option.DirPath == "" {
 		return errors.New("invalid dir path")
+	}
+	if option.MergeInterval <= 0 {
+		return errors.New("invalid merge interval")
 	}
 	return nil
 }

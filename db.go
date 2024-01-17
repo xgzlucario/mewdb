@@ -13,15 +13,16 @@ const (
 	timeCarry = 1e9
 
 	fileLockName = "FLOCK"
-	hintFileName = "HINT"
+	hintFileExt  = ".HINT"
+	dataFileExt  = ".SEG"
 )
 
 // DB represents a MEWDB database instance built on BITCASK model.
 // See https://en.wikipedia.org/wiki/Bitcask for more details.
 type DB struct {
-	flock       *flock.Flock
-	dataFiles   *Wal // data files save key-value by log-structured storage.
-	hintFiles   *Wal // hint files store the key and keydir for fast startup.
+	flock     *flock.Flock
+	dataFiles *Wal // data files save key-value by log-structured storage.
+	// hintFiles   *Wal // hint files store the key and keydir for fast startup.
 	index       *Index
 	options     *Options
 	ctx         context.Context
@@ -38,7 +39,7 @@ func Open(options Options) (db *DB, err error) {
 	}
 
 	// open data files.
-	dataFiles, err := openWal(options.DirPath)
+	dataFiles, err := openWal(options.DirPath, dataFileExt)
 	if err != nil {
 		return nil, err
 	}
@@ -59,17 +60,6 @@ func Open(options Options) (db *DB, err error) {
 		flock:     fileLock,
 		options:   &options,
 		dataFiles: dataFiles,
-	}
-
-	// open hint files.
-	db.hintFiles, err = openWal(path.Join(options.DirPath, "hint"))
-	if err != nil {
-		return nil, err
-	}
-
-	// load index from hintfiles.
-	if err := db.loadIndexFromHint(); err != nil {
-		return nil, err
 	}
 
 	// load index from WAL.
@@ -110,7 +100,7 @@ func (db *DB) PutWithTTL(key, value []byte, nanosec int64) error {
 	record := &LogRecord{
 		Timestamp: uint32(nanosec / timeCarry),
 		Key:       key,
-		Value:     value,
+		Value:     nil,
 	}
 	keydir, err := db.dataFiles.Write(record.encode())
 	if err != nil {
@@ -147,6 +137,28 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	return record.Value, nil
 }
 
+// Delete
+func (db *DB) Delete(key []byte) error {
+	if len(key) == 0 {
+		return ErrKeyIsEmpty
+	}
+
+	// write WAL first.
+	record := &LogRecord{
+		Key:   key,
+		Value: []byte{},
+	}
+	_, err := db.dataFiles.Write(record.encode())
+	if err != nil {
+		return err
+	}
+
+	// update index.
+	db.index.Delete(key)
+
+	return nil
+}
+
 // Close
 func (db *DB) Close() error {
 	// close data files.
@@ -155,9 +167,9 @@ func (db *DB) Close() error {
 	}
 
 	// close hint files.
-	if err := db.hintFiles.Close(); err != nil {
-		return err
-	}
+	// if err := db.hintFiles.Close(); err != nil {
+	// 	return err
+	// }
 
 	// release file lock.
 	if err := db.flock.Close(); err != nil {
@@ -180,14 +192,14 @@ func (db *DB) loadIndexFromWAL() error {
 }
 
 // loadIndexFromHint
-func (db *DB) loadIndexFromHint() error {
-	record := new(HintRecord)
+// func (db *DB) loadIndexFromHint() error {
+// 	record := new(HintRecord)
 
-	return db.hintFiles.Iter(func(_ Keydir, data []byte) {
-		record.decode(data)
-		db.index.Set(record.Key, record.Keydir)
-	})
-}
+// 	return db.hintFiles.Iter(func(_ Keydir, data []byte) {
+// 		record.decode(data)
+// 		db.index.Set(record.Key, record.Keydir)
+// 	})
+// }
 
 // Merge
 func (db *DB) Merge() error {
@@ -198,5 +210,18 @@ func (db *DB) Merge() error {
 		return db.doMerge()
 	default:
 		return ErrMergeIsRunning
+	}
+}
+
+type Stat struct {
+	Len             int
+	ActiveSegmentID uint32
+}
+
+// Stat
+func (db *DB) Stat() Stat {
+	return Stat{
+		Len:             db.index.Len(),
+		ActiveSegmentID: db.dataFiles.ActiveSegmentID(),
 	}
 }

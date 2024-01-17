@@ -2,7 +2,6 @@ package mewdb
 
 import (
 	"encoding/binary"
-	"fmt"
 	"unsafe"
 
 	"github.com/rosedblabs/wal"
@@ -52,11 +51,6 @@ func (r *LogRecord) decode(buf []byte) {
 // TTL
 func (r *LogRecord) TTL() int64 {
 	return int64(r.Timestamp) * timeCarry
-}
-
-// String
-func (r *LogRecord) String() string {
-	return fmt.Sprintf("LogRecord{Timestamp: %d, key: %s, value: %s}", r.Timestamp, r.Key, r.Value)
 }
 
 // HintRecord is the mewdb index record format on disk.

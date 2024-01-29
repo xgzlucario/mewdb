@@ -1,11 +1,13 @@
 package mewdb
 
 import (
-	"context"
+	"log/slog"
 	"path"
-	"time"
+	"sync"
+	"sync/atomic"
 
 	"github.com/gofrs/flock"
+	"github.com/robfig/cron/v3"
 )
 
 const (
@@ -20,15 +22,16 @@ const (
 // DB represents a MEWDB database instance built on BITCASK model.
 // See https://en.wikipedia.org/wiki/Bitcask for more details.
 type DB struct {
+	mu        sync.Mutex
 	flock     *flock.Flock
 	dataFiles *Wal // data files save key-value by log-structured storage.
-	// hintFiles   *Wal // hint files store the key and keydir for fast startup.
-	index       *Index
-	options     *Options
-	ctx         context.Context
-	cancel      context.CancelFunc
-	mergeC      chan struct{}
-	mergeTicker *time.Ticker // mergeTicker for auto merge task.
+	// hintFiles *Wal // hint files store the key and keydir for fast startup.
+	index   *Index
+	options *Options
+	closed  atomic.Bool
+	mergeC  chan struct{}
+	cron    *cron.Cron // cron scheduler for auto merge task.
+	log     *slog.Logger
 }
 
 // Open a database with the specified options.
@@ -37,6 +40,8 @@ func Open(options Options) (db *DB, err error) {
 	if err := checkOptions(options); err != nil {
 		return nil, err
 	}
+
+	options.Logger.Info("mewdb is starting")
 
 	// open data files.
 	dataFiles, err := openWal(options.DirPath, dataFileExt)
@@ -60,6 +65,8 @@ func Open(options Options) (db *DB, err error) {
 		flock:     fileLock,
 		options:   &options,
 		dataFiles: dataFiles,
+		mergeC:    make(chan struct{}, 1),
+		log:       options.Logger,
 	}
 
 	// load index from WAL.
@@ -67,20 +74,18 @@ func Open(options Options) (db *DB, err error) {
 		return nil, err
 	}
 
-	// init auto merge task.
-	db.mergeC = make(chan struct{}, 1)
-	db.ctx, db.cancel = context.WithCancel(context.Background())
-	db.mergeTicker = time.NewTicker(options.MergeInterval)
-	go func() {
-		for {
-			select {
-			case <-db.ctx.Done():
-				return
-			case <-db.mergeTicker.C:
-				db.Merge()
-			}
+	// start backend cron job.
+	db.cron = cron.New(cron.WithSeconds())
+	if len(options.MergeCronExpr) > 0 {
+		if _, err = db.cron.AddFunc(options.MergeCronExpr, func() {
+			db.Merge()
+		}); err != nil {
+			return nil, err
 		}
-	}()
+	}
+	db.cron.Start()
+
+	db.log.Info("mewdb is ready to go")
 
 	return db, nil
 }
@@ -161,6 +166,13 @@ func (db *DB) Delete(key []byte) error {
 
 // Close
 func (db *DB) Close() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if db.closed.Load() {
+		return ErrDatabaseIsClosed
+	}
+
 	// close data files.
 	if err := db.dataFiles.Close(); err != nil {
 		return err
@@ -175,8 +187,10 @@ func (db *DB) Close() error {
 	if err := db.flock.Close(); err != nil {
 		return err
 	}
-	close(db.mergeC)
-	db.cancel()
+
+	db.cron.Stop()
+
+	db.closed.Store(true)
 
 	return nil
 }
@@ -203,9 +217,10 @@ func (db *DB) loadIndexFromWAL() error {
 
 // Merge
 func (db *DB) Merge() error {
-	select {
-	case <-db.ctx.Done():
+	if db.closed.Load() {
 		return ErrDatabaseIsClosed
+	}
+	select {
 	case db.mergeC <- struct{}{}:
 		return db.doMerge()
 	default:

@@ -2,10 +2,10 @@ package mewdb
 
 // doMerge
 func (db *DB) doMerge() (err error) {
-	// release lock.
 	defer func() {
 		<-db.mergeC
 	}()
+	db.log.Info("start merge")
 
 	// get current active segmentId.
 	prevSegmentId, err := db.dataFiles.ActiveSegmentID(), db.dataFiles.OpenNewActiveSegment()
@@ -18,6 +18,7 @@ func (db *DB) doMerge() (err error) {
 
 	err = db.dataFiles.IterWithMax(prevSegmentId, func(keydir Keydir, data []byte) {
 		record.decode(data)
+
 		// if key is the latest version in index, write to new segment file.
 		indexKeydir, ok := db.index.Get(record.Key)
 		if ok && keydirEqual(indexKeydir, keydir) {
@@ -31,6 +32,8 @@ func (db *DB) doMerge() (err error) {
 	if err != nil {
 		return
 	}
+
+	db.log.Info("merge end")
 
 	// remove old segments.
 	return db.dataFiles.RemoveOldSegments(prevSegmentId)

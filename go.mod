@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/gofrs/flock v0.8.1
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/rosedblabs/wal v1.3.6
 	github.com/stretchr/testify v1.8.4
 	github.com/xgzlucario/GigaCache v0.0.0-20231226161408-655de575becb

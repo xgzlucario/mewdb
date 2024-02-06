@@ -15,7 +15,7 @@ type Index struct {
 // NewIndex
 func NewIndex() *Index {
 	return &Index{
-		m: cache.New(cache.DefaultOption),
+		m: cache.New(cache.DefaultOptions),
 	}
 }
 

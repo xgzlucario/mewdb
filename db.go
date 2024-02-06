@@ -91,12 +91,12 @@ func Open(options Options) (db *DB, err error) {
 }
 
 // Put
-func (db *DB) Put(key, value []byte) error {
-	return db.PutWithTTL(key, value, noTTL)
+func (db *DB) Put(key, val []byte) error {
+	return db.PutWithTTL(key, val, noTTL)
 }
 
 // PutWithTTL
-func (db *DB) PutWithTTL(key, value []byte, nanosec int64) error {
+func (db *DB) PutWithTTL(key, val []byte, nanosec int64) error {
 	if len(key) == 0 {
 		return ErrKeyIsEmpty
 	}
@@ -105,7 +105,7 @@ func (db *DB) PutWithTTL(key, value []byte, nanosec int64) error {
 	record := &LogRecord{
 		Timestamp: uint32(nanosec / timeCarry),
 		Key:       key,
-		Value:     nil,
+		Value:     val,
 	}
 	keydir, err := db.dataFiles.Write(record.encode())
 	if err != nil {
@@ -201,6 +201,7 @@ func (db *DB) loadIndexFromWAL() error {
 
 	return db.dataFiles.Iter(func(keydir Keydir, data []byte) {
 		record.decode(data)
+		// fmt.Println(string(record.Key), keydir, len(record.Value))
 		db.index.SetTx(record.Key, keydir, record.TTL())
 	})
 }

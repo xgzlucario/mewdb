@@ -1,9 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/xgzlucario/mewdb"
+)
+
+var (
+	// crop is 1K
+	v = make([]byte, 1024)
 )
 
 func main() {
@@ -14,12 +20,19 @@ func main() {
 
 	for i := 0; i < (1000 * 10000); i++ {
 		k := []byte(fmt.Sprintf("%08x", i))
-		v := make([]byte, 1024)
+		val, err := db.Get(k)
+		if err != nil {
+			panic(err)
+		}
+		if !bytes.Equal(val, v) {
+			panic(fmt.Errorf("value not equal: %s %v %v", k, len(val), len(v)))
+		}
+	}
+
+	for i := 0; i < (1000 * 10000); i++ {
+		k := []byte(fmt.Sprintf("%08x", i))
 		if err := db.Put(k, v); err != nil {
 			panic(err)
 		}
 	}
-
-	db.Merge()
-	select {}
 }

@@ -10,8 +10,6 @@ run-bench:
 	go run benchmark/*.go -db mewdb
 	go run benchmark/*.go -db rosedb
 	go run benchmark/*.go -db leveldb
-	go run benchmark/*.go -db flydb
-	go run benchmark/*.go -db barreldb
 	rm -rf tmp-*
 
 test-cover:

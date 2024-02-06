@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"time"
 
+	"github.com/rosedblabs/rosedb/v2"
+	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/xgzlucario/mewdb"
 )
 
@@ -22,7 +25,7 @@ func gcPause() time.Duration {
 }
 
 func genKV(id int) ([]byte, []byte) {
-	k := []byte(fmt.Sprintf("%08x", id))
+	k := []byte(strconv.Itoa(id))
 	return k, k
 }
 
@@ -50,33 +53,23 @@ func main() {
 			db.Put(k, v)
 		}
 
-		// case "rosedb":
-		// 	options := rosedb.DefaultOptions
-		// 	options.DirPath = "tmp-rosedb"
-		// 	db, _ := rosedb.Open(options)
-		// 	defer db.Close()
-		// 	for i := 0; i < entries; i++ {
-		// 		k, v := genKV(i)
-		// 		db.Put(k, v)
-		// 	}
+	case "rosedb":
+		options := rosedb.DefaultOptions
+		options.DirPath = "tmp-rosedb"
+		db, _ := rosedb.Open(options)
+		defer db.Close()
+		for i := 0; i < entries; i++ {
+			k, v := genKV(i)
+			db.Put(k, v)
+		}
 
-		// case "leveldb":
-		// 	db, _ := leveldb.OpenFile("tmp-leveldb", nil)
-		// 	defer db.Close()
-		// 	for i := 0; i < entries; i++ {
-		// 		k, v := genKV(i)
-		// 		db.Put(k, v, nil)
-		// 	}
-
-		// case "flydb":
-		// 	options := config.DefaultOptions
-		// 	options.DirPath = "tmp-flydb"
-		// 	db, _ := flydb.NewFlyDB(options)
-		// 	defer db.Close()
-		// 	for i := 0; i < entries; i++ {
-		// 		k, v := genKV(i)
-		// 		db.Put(k, v)
-		// 	}
+	case "leveldb":
+		db, _ := leveldb.OpenFile("tmp-leveldb", nil)
+		defer db.Close()
+		for i := 0; i < entries; i++ {
+			k, v := genKV(i)
+			db.Put(k, v, nil)
+		}
 	}
 	cost := time.Since(start)
 

@@ -2,9 +2,7 @@ package mewdb
 
 // doMerge
 func (db *DB) doMerge() (err error) {
-	defer func() {
-		<-db.mergeC
-	}()
+	defer db.mergeLock.Unlock()
 	db.log.Info("start merge")
 
 	// get current active segmentId.
@@ -26,7 +24,7 @@ func (db *DB) doMerge() (err error) {
 			if err != nil {
 				return
 			}
-			db.index.Set(record.Key, newKeydir)
+			db.index.Set(record.Key, newKeydir, record.TTL())
 		}
 	})
 	if err != nil {

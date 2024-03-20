@@ -12,7 +12,7 @@ const (
 
 var DefaultOptions = Options{
 	DirPath:       "mewdb",
-	MergeCronExpr: CronExprEveryMinute,
+	MergeCronExpr: CronExprEveryHour,
 	Logger:        slog.Default(),
 }
 

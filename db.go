@@ -26,12 +26,12 @@ type DB struct {
 	flock     *flock.Flock
 	dataFiles *Wal // data files save key-value by log-structured storage.
 	// hintFiles *Wal // hint files store the key and keydir for fast startup.
-	index   *Index
-	options *Options
-	closed  atomic.Bool
-	mergeC  chan struct{}
-	cron    *cron.Cron // cron scheduler for auto merge task.
-	log     *slog.Logger
+	index     *Index
+	options   *Options
+	closed    atomic.Bool
+	mergeLock sync.Mutex
+	cron      *cron.Cron // cron scheduler for auto merge task.
+	log       *slog.Logger
 }
 
 // Open a database with the specified options.
@@ -65,7 +65,6 @@ func Open(options Options) (db *DB, err error) {
 		flock:     fileLock,
 		options:   &options,
 		dataFiles: dataFiles,
-		mergeC:    make(chan struct{}, 1),
 		log:       options.Logger,
 	}
 
@@ -100,7 +99,6 @@ func (db *DB) PutWithTTL(key, val []byte, nanosec int64) error {
 	if len(key) == 0 {
 		return ErrKeyIsEmpty
 	}
-
 	// write WAL first.
 	record := &LogRecord{
 		Timestamp: uint32(nanosec / timeCarry),
@@ -112,7 +110,7 @@ func (db *DB) PutWithTTL(key, val []byte, nanosec int64) error {
 		return err
 	}
 	// update index.
-	db.index.Set(key, keydir)
+	db.index.Set(key, keydir, nanosec)
 
 	return nil
 }
@@ -202,7 +200,7 @@ func (db *DB) loadIndexFromWAL() error {
 	return db.dataFiles.Iter(func(keydir Keydir, data []byte) {
 		record.decode(data)
 		// fmt.Println(string(record.Key), keydir, len(record.Value))
-		db.index.SetTx(record.Key, keydir, record.TTL())
+		db.index.Set(record.Key, keydir, record.TTL())
 	})
 }
 
@@ -221,23 +219,8 @@ func (db *DB) Merge() error {
 	if db.closed.Load() {
 		return ErrDatabaseIsClosed
 	}
-	select {
-	case db.mergeC <- struct{}{}:
+	if db.mergeLock.TryLock() {
 		return db.doMerge()
-	default:
-		return ErrMergeIsRunning
 	}
-}
-
-type Stat struct {
-	Len             int
-	ActiveSegmentID uint32
-}
-
-// Stat
-func (db *DB) Stat() Stat {
-	return Stat{
-		Len:             db.index.Len(),
-		ActiveSegmentID: db.dataFiles.ActiveSegmentID(),
-	}
+	return ErrMergeIsRunning
 }

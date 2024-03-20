@@ -2,35 +2,24 @@ package mewdb
 
 import (
 	"fmt"
-	"math"
-	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/rosedblabs/wal"
 	"github.com/stretchr/testify/assert"
+	cache "github.com/xgzlucario/GigaCache"
 )
 
-var source = rand.NewSource(time.Now().UnixNano())
-
-func randInt(max int64) int64 {
-	n := source.Int63()
-	for n > max {
-		n = n >> 1
-	}
-	return n
-}
-
 func randKey() []byte {
-	return []byte(fmt.Sprintf("%08x", source.Int63()))
+	return []byte(fmt.Sprintf("%08x", cache.FastRand64()))
 }
 
 func randKeydir() Keydir {
 	return &wal.ChunkPosition{
-		SegmentId:   uint32(randInt(math.MaxUint32)),
-		BlockNumber: uint32(randInt(math.MaxUint32)),
-		ChunkOffset: randInt(math.MaxUint32),
-		ChunkSize:   uint32(randInt(math.MaxUint32)),
+		SegmentId:   cache.FastRand(),
+		BlockNumber: cache.FastRand(),
+		ChunkOffset: int64(cache.FastRand64()),
+		ChunkSize:   cache.FastRand(),
 	}
 }
 
@@ -45,7 +34,7 @@ func TestIndex(t *testing.T) {
 		// set
 		for i := 0; i < N; i++ {
 			key, keydir := randKey(), randKeydir()
-			index.Set(key, keydir)
+			index.Set(key, keydir, 0)
 			validMap[string(key)] = keydir
 
 			// check length.
@@ -66,7 +55,7 @@ func TestIndex(t *testing.T) {
 			v, ok := validMap[string(key)]
 			assert.True(ok)
 			assert.Equal(keydir, v)
-			return false
+			return true
 		})
 		assert.Equal(count, N)
 	})

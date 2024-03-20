@@ -32,22 +32,17 @@ func (i *Index) Get(key []byte) (keydir Keydir, ok bool) {
 }
 
 // Set
-func (i *Index) Set(key []byte, keydir Keydir) {
+func (i *Index) Set(key []byte, keydir Keydir, ttl int64) {
 	i.m.Set(b2s(key), keydir.Encode())
-}
-
-// SetTx
-func (i *Index) SetTx(key []byte, keydir Keydir, ttl int64) {
-	i.m.SetTx(b2s(key), keydir.Encode(), ttl)
 }
 
 // Delete
 func (i *Index) Delete(key []byte) bool {
-	return i.m.Delete(b2s(key))
+	return i.m.Remove(b2s(key))
 }
 
 // Scan
-func (i *Index) Scan(f func(key []byte, ts int64, keydir Keydir) (stop bool)) {
+func (i *Index) Scan(f func(key []byte, ts int64, keydir Keydir) (next bool)) {
 	i.m.Scan(func(key, val []byte, ts int64) bool {
 		return f(key, ts, wal.DecodeChunkPosition(val))
 	})

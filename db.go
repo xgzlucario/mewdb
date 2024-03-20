@@ -99,8 +99,10 @@ func (db *DB) PutWithTTL(key, val []byte, nanosec int64) error {
 	if len(key) == 0 {
 		return ErrKeyIsEmpty
 	}
+
 	// write WAL first.
 	record := &LogRecord{
+		Type:      toType(len(val)),
 		Timestamp: uint32(nanosec / timeCarry),
 		Key:       key,
 		Value:     val,
@@ -109,6 +111,7 @@ func (db *DB) PutWithTTL(key, val []byte, nanosec int64) error {
 	if err != nil {
 		return err
 	}
+
 	// update index.
 	db.index.Set(key, keydir, nanosec)
 
@@ -135,7 +138,7 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 
 	// decode record.
 	record := new(LogRecord)
-	record.decode(data)
+	record.decodeAll(data)
 
 	return record.Value, nil
 }
@@ -176,11 +179,6 @@ func (db *DB) Close() error {
 		return err
 	}
 
-	// close hint files.
-	// if err := db.hintFiles.Close(); err != nil {
-	// 	return err
-	// }
-
 	// release file lock.
 	if err := db.flock.Close(); err != nil {
 		return err
@@ -198,21 +196,15 @@ func (db *DB) loadIndexFromWAL() error {
 	record := new(LogRecord)
 
 	return db.dataFiles.Iter(func(keydir Keydir, data []byte) {
-		record.decode(data)
-		// fmt.Println(string(record.Key), keydir, len(record.Value))
-		db.index.Set(record.Key, keydir, record.TTL())
+		record.decodeKey(data)
+
+		if record.Type == TypeDel {
+			db.index.Delete(record.Key)
+		} else {
+			db.index.Set(record.Key, keydir, record.TTL())
+		}
 	})
 }
-
-// loadIndexFromHint
-// func (db *DB) loadIndexFromHint() error {
-// 	record := new(HintRecord)
-
-// 	return db.hintFiles.Iter(func(_ Keydir, data []byte) {
-// 		record.decode(data)
-// 		db.index.Set(record.Key, record.Keydir)
-// 	})
-// }
 
 // Merge
 func (db *DB) Merge() error {

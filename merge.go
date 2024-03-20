@@ -15,8 +15,10 @@ func (db *DB) doMerge() (err error) {
 	var newKeydir Keydir
 
 	err = db.dataFiles.IterWithMax(prevSegmentId, func(keydir Keydir, data []byte) {
-		record.decode(data)
-
+		record.decodeKey(data)
+		if record.Type == TypeDel {
+			return
+		}
 		// if key is the latest version in index, write to new segment file.
 		indexKeydir, ok := db.index.Get(record.Key)
 		if ok && keydirEqual(indexKeydir, keydir) {

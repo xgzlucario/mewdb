@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"time"
 
 	"github.com/xgzlucario/mewdb"
 )
@@ -13,10 +14,13 @@ var (
 )
 
 func main() {
+	start := time.Now()
 	db, err := mewdb.Open(mewdb.DefaultOptions)
 	if err != nil {
 		panic(err)
 	}
+	defer db.Close()
+	fmt.Println("startup:", time.Since(start))
 
 	for i := 0; i < (1000 * 10000); i++ {
 		k := []byte(fmt.Sprintf("%08x", i))
@@ -29,10 +33,10 @@ func main() {
 		}
 	}
 
-	for i := 0; i < (1000 * 10000); i++ {
-		k := []byte(fmt.Sprintf("%08x", i))
-		if err := db.Put(k, v); err != nil {
-			panic(err)
-		}
-	}
+	// for i := 0; i < (1000 * 10000); i++ {
+	// 	k := []byte(fmt.Sprintf("%08x", i))
+	// 	if err := db.Put(k, v); err != nil {
+	// 		panic(err)
+	// 	}
+	// }
 }

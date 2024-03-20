@@ -80,35 +80,11 @@ func TestRecord(t *testing.T) {
 			buf := record.encode()
 
 			// decode
-			record.decode(buf)
+			record.decodeAll(buf)
 
 			assert.Equal(int64(now)*timeCarry, record.TTL())
 			assert.Equal(key, record.Key)
 			assert.Equal(val, record.Value)
-		}
-	})
-
-	t.Run("hintRecord", func(t *testing.T) {
-		var record *HintRecord
-
-		for i := 0; i < 10000; i++ {
-			now := uint32(time.Now().Unix())
-			key, keydir := randKey(), randKeydir()
-
-			record = &HintRecord{
-				Timestamp: now,
-				Key:       key,
-				Keydir:    keydir,
-			}
-			// encode
-			buf := record.encode()
-
-			// decode
-			record.decode(buf)
-
-			assert.Equal(int64(now)*timeCarry, record.TTL())
-			assert.Equal(key, record.Key)
-			assert.Equal(keydir, record.Keydir)
 		}
 	})
 }

@@ -4,6 +4,7 @@ go 1.21
 
 require (
 	github.com/gofrs/flock v0.8.1
+	github.com/klauspost/compress v1.17.7
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/rosedblabs/rosedb/v2 v2.3.4
 	github.com/rosedblabs/wal v1.3.6

@@ -4,3 +4,5 @@ coverage.*
 tmp-*
 
 FLOCK
+
+test-api/

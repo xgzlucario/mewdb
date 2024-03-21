@@ -25,7 +25,6 @@ type DB struct {
 	mu        sync.Mutex
 	flock     *flock.Flock
 	dataFiles *Wal // data files save key-value by log-structured storage.
-	// hintFiles *Wal // hint files store the key and keydir for fast startup.
 	index     *Index
 	options   *Options
 	closed    atomic.Bool
@@ -44,7 +43,7 @@ func Open(options Options) (db *DB, err error) {
 	options.Logger.Info("mewdb is starting")
 
 	// open data files.
-	dataFiles, err := openWal(options.DirPath, dataFileExt)
+	dataFiles, err := openWal(options)
 	if err != nil {
 		return nil, err
 	}
@@ -107,10 +106,13 @@ func (db *DB) PutWithTTL(key, val []byte, nanosec int64) error {
 		Key:       key,
 		Value:     val,
 	}
-	keydir, err := db.dataFiles.Write(record.encode())
+
+	buf := record.encode()
+	keydir, err := db.dataFiles.Write(buf)
 	if err != nil {
 		return err
 	}
+	bpool.Put(buf)
 
 	// update index.
 	db.index.Set(key, keydir, nanosec)
@@ -151,13 +153,16 @@ func (db *DB) Delete(key []byte) error {
 
 	// write WAL first.
 	record := &LogRecord{
-		Key:   key,
-		Value: []byte{},
+		Type: typeDel,
+		Key:  key,
 	}
-	_, err := db.dataFiles.Write(record.encode())
+
+	buf := record.encode()
+	_, err := db.dataFiles.Write(buf)
 	if err != nil {
 		return err
 	}
+	bpool.Put(buf)
 
 	// update index.
 	db.index.Delete(key)
@@ -195,10 +200,10 @@ func (db *DB) Close() error {
 func (db *DB) loadIndexFromWAL() error {
 	record := new(LogRecord)
 
-	return db.dataFiles.Iter(func(keydir Keydir, data []byte) {
+	return db.dataFiles.Iter(0, db.dataFiles.ActiveSegmentID(), func(keydir Keydir, data []byte) {
 		record.decodeKey(data)
 
-		if record.Type == TypeDel {
+		if record.Type == typeDel {
 			db.index.Delete(record.Key)
 		} else {
 			db.index.Set(record.Key, keydir, record.TTL())

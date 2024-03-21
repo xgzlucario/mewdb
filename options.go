@@ -6,29 +6,34 @@ import (
 )
 
 const (
+	KB = 1024
+	MB = 1024 * KB
+	GB = 1024 * MB
+
 	CronExprEveryHour   = "0 0 0/1 * * ?"
 	CronExprEveryMinute = "0 0/1 * * * ?"
 )
 
 var DefaultOptions = Options{
-	DirPath:       "mewdb",
-	MergeCronExpr: CronExprEveryHour,
-	Logger:        slog.Default(),
+	DirPath:        "mewdb",
+	MergeCronExpr:  CronExprEveryHour,
+	Logger:         slog.Default(),
+	SegmentSize:    GB,
+	SegmentFileExt: ".SEG",
 }
 
-// Options represents the configuration for mewdb.
 type Options struct {
 	// DirPath is the database storage path.
 	DirPath string
 
-	// MergeCronExpr
 	MergeCronExpr string
 
-	// Logger
 	Logger *slog.Logger
+
+	SegmentSize    int64
+	SegmentFileExt string
 }
 
-// checkOptions checks the validity of the options.
 func checkOptions(options Options) error {
 	if options.DirPath == "" {
 		return errors.New("invalid dir path")

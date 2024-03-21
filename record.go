@@ -4,28 +4,32 @@ import (
 	"encoding/binary"
 
 	"github.com/klauspost/compress/zstd"
+	cache "github.com/xgzlucario/GigaCache"
 )
 
 var (
 	order = binary.LittleEndian
 
-	encoder, _ = zstd.NewWriter(nil)
-	decoder, _ = zstd.NewReader(nil)
+	encoder, _    = zstd.NewWriter(nil)
+	decoder, _    = zstd.NewReader(nil)
+	compressRatio = 4
+
+	bpool = cache.NewBufferPool()
 )
 
 type Type byte
 
 const (
-	TypeVal Type = iota
-	TypeDel
-	TypeZstdCompress
+	typeVal Type = iota
+	typeDel
+	typeZstdCompress
 )
 
 func toType(vlen int) Type {
 	if vlen >= 1024 {
-		return TypeZstdCompress
+		return typeZstdCompress
 	}
-	return TypeVal
+	return typeVal
 }
 
 // LogRecord is the mewdb data record format on disk.
@@ -36,9 +40,16 @@ type LogRecord struct {
 	Value     []byte
 }
 
+func varintSize[T uint64 | int](v T) (n int) {
+	for ; v > 0; n++ {
+		v >>= 7
+	}
+	return
+}
+
 // encode
 func (r *LogRecord) encode() []byte {
-	buf := make([]byte, 0, 1+4+binary.MaxVarintLen32+len(r.Key)+len(r.Value))
+	buf := bpool.Get(1 + 4 + varintSize(len(r.Key)) + len(r.Key) + len(r.Value))[:0]
 
 	// type
 	buf = append(buf, byte(r.Type))
@@ -52,11 +63,11 @@ func (r *LogRecord) encode() []byte {
 
 	// value
 	switch r.Type {
-	case TypeZstdCompress:
-		preAlloc := make([]byte, 0, len(r.Value)/4)
+	case typeZstdCompress:
+		preAlloc := bpool.Get(len(r.Value) / compressRatio)
 		return append(buf, encoder.EncodeAll(r.Value, preAlloc)...)
 
-	case TypeVal:
+	case typeVal:
 		return append(buf, r.Value...)
 	}
 	return buf
@@ -88,14 +99,11 @@ func (r *LogRecord) decodeAll(buf []byte) {
 	index := r.decodeKey(buf)
 
 	switch r.Type {
-	case TypeZstdCompress:
-		r.Value, _ = decoder.DecodeAll(buf[index:], nil)
+	case typeZstdCompress:
+		r.Value, _ = decoder.DecodeAll(buf[index:], bpool.Get(len(buf) * compressRatio)[:0])
 
-	case TypeVal:
+	case typeVal:
 		r.Value = buf[index:]
-
-	default:
-		return
 	}
 }
 
